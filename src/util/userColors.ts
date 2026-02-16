@@ -1,15 +1,16 @@
 // Color palette for different users - distinct colors that work in both light and dark themes
+// Modern gradient-inspired colors with good contrast
 export const USER_COLORS = [
-  { bg: "#0d6efd", bgLight: "#cfe2ff", name: "blue" },       // User 1 - Blue
-  { bg: "#6f42c1", bgLight: "#e2d9f3", name: "purple" },     // User 2 - Purple
-  { bg: "#fd7e14", bgLight: "#ffe5d0", name: "orange" },     // User 3 - Orange
-  { bg: "#d63384", bgLight: "#f7d6e6", name: "pink" },       // User 4 - Pink
-  { bg: "#20c997", bgLight: "#d2f4ea", name: "teal" },       // User 5 - Teal
-  { bg: "#dc3545", bgLight: "#f8d7da", name: "red" },        // User 6 - Red
-  { bg: "#0dcaf0", bgLight: "#cff4fc", name: "cyan" },       // User 7 - Cyan
-  { bg: "#ffc107", bgLight: "#fff3cd", name: "yellow" },     // User 8 - Yellow
-  { bg: "#6610f2", bgLight: "#e0cffc", name: "indigo" },     // User 9 - Indigo
-  { bg: "#198754", bgLight: "#d1e7dd", name: "emerald" },    // User 10 - Emerald
+  { bg: "#6366f1", bgLight: "#e0e7ff", name: "indigo" },     // User 1 - Indigo (primary brand)
+  { bg: "#8b5cf6", bgLight: "#ede9fe", name: "violet" },     // User 2 - Violet
+  { bg: "#ec4899", bgLight: "#fce7f3", name: "pink" },       // User 3 - Pink
+  { bg: "#f97316", bgLight: "#ffedd5", name: "orange" },     // User 4 - Orange
+  { bg: "#14b8a6", bgLight: "#ccfbf1", name: "teal" },       // User 5 - Teal
+  { bg: "#3b82f6", bgLight: "#dbeafe", name: "blue" },       // User 6 - Blue
+  { bg: "#f59e0b", bgLight: "#fef3c7", name: "amber" },      // User 7 - Amber
+  { bg: "#06b6d4", bgLight: "#cffafe", name: "cyan" },       // User 8 - Cyan
+  { bg: "#84cc16", bgLight: "#ecfccb", name: "lime" },       // User 9 - Lime
+  { bg: "#a855f7", bgLight: "#f3e8ff", name: "purple" },     // User 10 - Purple
 ];
 
 // Get color for a user based on their index
@@ -42,8 +43,8 @@ export function getUserBgStyle(userIndex: number, isDark: boolean): React.CSSPro
 
 // Mixed color for when multiple users solved the same problem
 export const MIXED_SOLVED_COLOR = {
-  bg: "#6c757d",        // Gray for dark mode
-  bgLight: "#e2e3e5",   // Light gray for light mode
+  bg: "#475569",        // Slate for dark mode
+  bgLight: "#e2e8f0",   // Light slate for light mode
 };
 
 export function getMixedSolvedColor(isDark: boolean): string {
