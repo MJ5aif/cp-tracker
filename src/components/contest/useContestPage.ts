@@ -1,0 +1,246 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import useSubmissionsStore from "../../data/hooks/useSubmissionsStore";
+import useTheme from "../../data/hooks/useTheme";
+import { useAppSelector } from "../../data/store";
+import useAppSearchParams from "../../hooks/useSearchParam";
+import Contest, { ContestCat } from "../../types/CF/Contest";
+import { Verdict } from "../../types/CF/Submission";
+import { StorageService } from "../../util/StorageService";
+import { SearchKeys } from "../../util/constants";
+import { ParticipantType } from "../../types/CF/Party";
+import useContestStore from "../../data/hooks/useContestStore";
+import { isDefined, isFunction } from "../../util/util";
+import { createUserColorMap } from "../../util/userColors";
+
+// Type for tracking which users solved each problem
+export interface ProblemSolvers {
+	verdict: Verdict;
+	solvers: Set<string>; // Set of user handles who solved/attempted
+}
+
+export type ContestVerdicts = Map<Verdict, Map<string, Set<string>>>; // Verdict -> problemIndex -> Set<handles>
+
+export interface Filter {
+	perPage: number;
+	showDate: boolean;
+	showRating: boolean;
+	showColor: boolean;
+	showShortName: boolean;
+	search: string;
+	selectedCategories: ContestCat[];
+	canSelectMultipleCategories: boolean;
+}
+
+export type UpdateFilter = Partial<Filter> | ((filter: Filter) => Partial<Filter>);
+
+function useContestPage() {
+	const state = useAppSelector((state) => {
+		return {
+			appState: state.appState,
+			problemList: state.problemList,
+			handles: state.userList.handles,
+		};
+	});
+
+	const { theme } = useTheme();
+	const { searchParams, updateSearchParam, deleteSearchParam } = useAppSearchParams();
+	const { submissions: userSubmissions } = useSubmissionsStore();
+	const { contests } = useContestStore();
+
+	// Create color map for tracked handles
+	const userColorMap = useMemo(() => {
+		return createUserColorMap(state.handles);
+	}, [state.handles]);
+
+	const [contestList, setContestList] = useState<{
+		contests: Contest[];
+		error: string;
+	}>({ contests: [], error: "" });
+
+	const [randomContest, setRandomContest] = useState(-1);
+
+	const defaultFilt: Filter = {
+		perPage: 100,
+		showDate: false,
+		showRating: true,
+		showColor: true,
+		showShortName: true,
+		selectedCategories: [ContestCat.DIV2],
+		search: searchParams.get(SearchKeys.Search) ?? "",
+		canSelectMultipleCategories: false,
+	};
+
+	enum ContestSave {
+		SolveStatus = "CONTEST_SOLVE_STATUS",
+		ParticipantType = "PARTICIPANT_TYPE",
+		Filter = "CONTEST_FILTER",
+	}
+
+	const [filter, setFilter] = useState<Filter>(StorageService.getObject(ContestSave.Filter, defaultFilt));
+
+	const categoryFilter = useMemo(() => {
+		return {
+			selectedCategories: filter.selectedCategories,
+			canSelectMultipleCategories: filter.canSelectMultipleCategories
+		};
+	}, [filter.selectedCategories, filter.canSelectMultipleCategories]);
+
+	const selectableVerdictStatuses = useMemo(() => [Verdict.SOLVED, Verdict.ATTEMPTED, Verdict.UNSOLVED], []);
+
+	const allParticipantType = useMemo(() => Object.keys(ParticipantType), []);
+
+	const [selected, setSelected] = useState(0);
+	const [solveStatus, setSolveStatus] = useState(StorageService.getSet(ContestSave.SolveStatus, selectableVerdictStatuses));
+	const [participant, setParticipant] = useState(StorageService.getSet(ContestSave.ParticipantType, allParticipantType));
+
+	const currentPageContests = useMemo(() => {
+		if (randomContest !== -1) {
+			return [contestList.contests[randomContest]];
+		}
+		let lo = selected * filter.perPage;
+		let high = Math.min(contestList.contests.length, lo + filter.perPage);
+
+		if (lo > high) return [];
+		console.log("CurrentPageContests ", randomContest, lo, high);
+		// return contestList.contests.slice(lo, high);
+		return getCurrentPageContests();
+	}, [contestList, selected, filter.perPage, randomContest]);
+
+	const submissions = useMemo(() => {
+		let currRec: Map<number, Map<Verdict, Set<string>>> = new Map();
+		for (let sub of userSubmissions) {
+			if (sub.contestId === undefined || sub.index === undefined || !participant.has(sub.author.participantType))
+				continue;
+			let ver = sub.verdict === Verdict.OK ? Verdict.SOLVED : Verdict.ATTEMPTED;
+			if (!currRec.has(sub.contestId)) currRec.set(sub.contestId, new Map<Verdict, Set<string>>());
+			if (!currRec.get(sub.contestId)!.has(ver)) currRec.get(sub.contestId)!.set(ver, new Set());
+			currRec.get(sub.contestId)!.get(ver)!.add(sub.index);
+		}
+		return currRec;
+	}, [userSubmissions, participant]);
+
+	// Track which users solved which problems - contestId -> problemIndex -> Set<handles>
+	const problemSolvers = useMemo(() => {
+		let solvers: Map<number, Map<string, Set<string>>> = new Map();
+		for (let sub of userSubmissions) {
+			if (sub.contestId === undefined || sub.index === undefined || !participant.has(sub.author.participantType))
+				continue;
+			if (sub.verdict !== Verdict.OK) continue; // Only track solved problems
+			
+			const handle = sub.author.members[0]?.handle?.toLowerCase() ?? "";
+			if (!handle) continue;
+			
+			if (!solvers.has(sub.contestId)) solvers.set(sub.contestId, new Map<string, Set<string>>());
+			if (!solvers.get(sub.contestId)!.has(sub.index)) solvers.get(sub.contestId)!.set(sub.index, new Set());
+			solvers.get(sub.contestId)!.get(sub.index)!.add(handle);
+		}
+		return solvers;
+	}, [userSubmissions, participant]);
+
+	function contestStatus(contest: Contest) {
+		if (!submissions.has(contest.id)) return Verdict.UNSOLVED;
+		if (submissions.get(contest.id)?.has(Verdict.SOLVED)) return Verdict.SOLVED;
+		return Verdict.ATTEMPTED;
+	};
+
+	function filterContest(contest: Contest) {
+		let status = solveStatus.has(contestStatus(contest));
+
+		let searchIncluded = true;
+
+		let text = filter.search.toLowerCase().trim();
+
+		if (text.length) searchIncluded = contest.name.toLowerCase().includes(text) || contest.id.toString().includes(text);
+
+		let catIn = false;
+
+		if (isDefined(contest.category) && filter.selectedCategories.includes(contest.category))
+			catIn = true;
+
+		return status && searchIncluded && contest.count !== 0 && catIn;
+	};
+
+	function getCurrentPageContests() {
+		let lo = selected * filter.perPage;
+		let high = Math.min(contestList.contests.length, lo + filter.perPage);
+
+		if (lo > high) return [];
+		return contestList.contests.slice(lo, high);
+	}
+
+	useEffect(() => {
+		StorageService.saveObject(ContestSave.Filter, filter);
+		if (filter.search.trim().length) updateSearchParam(SearchKeys.Search, filter.search.trim());
+		else deleteSearchParam(SearchKeys.Search);
+
+		const newContestList = contests.filter((contest) => filterContest(contest));
+
+		setContestList({ ...contestList, contests: newContestList });
+		setRandomContest(-1);
+	}, [state.problemList.problems, filter, solveStatus, submissions]);
+
+	useEffect(() => {
+		if (!filter.canSelectMultipleCategories) {
+			let newSelectedCategory = filter.selectedCategories.length === 0 ? ContestCat.DIV2 : filter.selectedCategories[0];
+			updateFilter({ selectedCategories: [newSelectedCategory] });
+		}
+	}, [filter.canSelectMultipleCategories]);
+
+	useEffect(() => {
+		setSelected(0);
+	}, [filter.selectedCategories]);
+
+	function updateSolveStatus(status: Set<Verdict>) {
+		setSolveStatus(status);
+		StorageService.saveSet(ContestSave.SolveStatus, status);
+	}
+
+	function updateParticipantsType(participantType: Set<string>) {
+		setParticipant(participantType);
+		StorageService.saveSet(ContestSave.ParticipantType, participantType);
+	}
+
+	const updateFilter = useCallback((value: UpdateFilter) => {
+		if (isFunction(value))
+			setFilter(prvFilter => ({ ...prvFilter, ...value(prvFilter) }));
+		else
+			setFilter(prvFilter => ({ ...prvFilter, ...value }));
+	}, []);
+
+	const setCategories = useCallback(
+		(categories: ContestCat[]) => updateFilter({ selectedCategories: Array.from(categories) }),
+		[updateFilter]
+	);
+
+	const setUpdatedCanSelectMultipleCategories = useCallback(
+		(updatedCanSelectMultipleCategories: boolean) =>
+			updateFilter({ canSelectMultipleCategories: updatedCanSelectMultipleCategories }),
+		[updateFilter]
+	);
+
+	return {
+		state,
+		theme,
+		contestList,
+		selected,
+		filter,
+		solveStatus,
+		submissions,
+		problemSolvers,
+		userColorMap,
+		allParticipantType,
+		participant,
+		currentPageContests,
+		selectableVerdictStatuses,
+		categoryFilter,
+		updateFilter,
+		setSelected,
+		setSolveStatus: updateSolveStatus,
+		setParticipant: updateParticipantsType,
+		setRandomContest,
+		setCategories,
+		setUpdatedCanSelectMultipleCategories
+	};
+}
+
+export default useContestPage;

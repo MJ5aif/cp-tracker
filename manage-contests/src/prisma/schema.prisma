@@ -1,0 +1,44 @@
+// Set the datasource provider to PostgreSQL
+datasource db {
+  provider = "postgresql"
+}
+
+// Generate the Prisma client for TypeScript
+generator client {
+  provider = "prisma-client"
+  output   = "./generated/client"
+}
+
+// Define the Problem model
+model Problem {
+  name      String
+  contestId Int
+  index     String
+  rating    Int?
+
+  // Define foreign key relationship to Contest
+  contest Contest @relation(fields: [contestId], references: [contestId])
+
+  @@id([contestId, index])
+}
+
+// Define the Contest model
+model Contest {
+  contestId           Int             @id
+  name                String
+  Problem             Problem[]
+  SharedContest       SharedContest[] @relation("contest")
+  parentSharedContest SharedContest[] @relation("parentContest")
+}
+
+// Define the SharedContest model
+model SharedContest {
+  contestId       Int @unique
+  parentContestId Int
+
+  // Define foreign key relationships to Contest
+  Contest       Contest @relation("contest", fields: [contestId], references: [contestId])
+  parentContest Contest @relation("parentContest", fields: [parentContestId], references: [contestId])
+
+  @@id([contestId, parentContestId])
+}
